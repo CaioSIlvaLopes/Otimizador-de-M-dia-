@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Otimizador Pro | E-commerce</title>
+  
+  <!-- Injeta os cabeçalhos de segurança virtuais para o FFmpeg funcionar no GitHub Pages -->
+  <script src="coi-serviceworker.js"></script>
+
+  <script src="https://cdn.tailwindcss.com" crossorigin="anonymous"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js" crossorigin="anonymous"></script>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col justify-between">
+
+  <header class="bg-white border-b border-slate-200 py-6 px-4 shadow-sm">
+    <div class="max-w-5xl mx-auto text-center flex justify-between items-center">
+      <div class="text-left">
+        <h1 class="text-2xl sm:text-3xl font-bold text-slate-900">Otimizador Pro</h1>
+        <p class="text-slate-600 mt-1 text-sm">Preparação de media (Imagens &lt; 2MB | Vídeos MP4 &lt; 30MB)</p>
+      </div>
+      <div class="text-right hidden sm:block">
+        <div class="text-xs text-slate-500">Poupança Total de Dados</div>
+        <div id="totalSavedStat" class="text-xl font-bold text-emerald-600">0.00 MB</div>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-5xl mx-auto p-4 sm:p-6 w-full flex-grow grid grid-cols-1 md:grid-cols-12 gap-6">
+
+    <!-- Coluna Esquerda: Configurações -->
+    <div class="md:col-span-5 space-y-6">
+      
+      <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+        <h2 class="text-base font-semibold text-slate-900 mb-4 flex items-center gap-2">⚙️ Configurações (Ajustáveis a qualquer momento)</h2>
+        
+        <div class="space-y-4">
+          <div>
+            <label class="block text-xs font-medium text-slate-700 mb-1">Formato de Saída (Imagens):</label>
+            <select id="formatSelect" class="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-colors">
+              <option value="image/jpeg" data-ext="jpg">JPG (.jpg)</option>
+              <option value="image/webp" data-ext="webp">WebP (.webp)</option>
+              <option value="image/png" data-ext="png">PNG (.png)</option>
+            </select>
+          </div>
+
+          <div class="pt-2 border-t border-slate-100 space-y-3">
+            <label class="flex items-center space-x-3 cursor-pointer group">
+              <input type="checkbox" id="squareCrop" class="w-4 h-4 text-blue-600 rounded border-slate-300">
+              <span class="text-sm font-medium text-slate-700 group-hover:text-blue-600 transition-colors">Forçar proporção quadrada (1:1 com fundo branco)</span>
+            </label>
+            
+            <label class="flex items-center space-x-3 cursor-pointer group">
+              <input type="checkbox" id="muteVideo" checked class="w-4 h-4 text-blue-600 rounded border-slate-300">
+              <span class="text-sm font-medium text-slate-700 group-hover:text-blue-600 transition-colors">Remover áudio dos vídeos</span>
+            </label>
+
+            <label class="flex items-center space-x-3 cursor-pointer group">
+              <input type="checkbox" id="zipCheckbox" checked class="w-4 h-4 text-blue-600 rounded border-slate-300">
+              <span class="text-sm font-medium text-slate-700 group-hover:text-blue-600 transition-colors">Agrupar ficheiros num ZIP</span>
+            </label>
+          </div>
+
+          <div class="pt-4 border-t border-slate-100">
+            <label class="block text-xs font-medium text-slate-700 mb-1">Marca de Água Opcional (Logótipo PNG/WebP):</label>
+            <input type="file" id="watermarkInput" accept="image/png,image/webp" class="block w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer">
+            <div id="watermarkPreview" class="hidden mt-2">
+              <img id="wmImage" src="" class="h-10 object-contain bg-slate-100 rounded p-1">
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Coluna Direita: Fila e Processamento -->
+    <div class="md:col-span-7 flex flex-col space-y-6">
+      
+      <div id="dropzone" class="border-2 border-dashed border-slate-300 bg-white rounded-2xl p-8 text-center cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition shadow-sm">
+        <input type="file" id="fileInput" multiple accept="image/*,video/*,.jfif" class="hidden">
+        <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-3 text-xl">📁</div>
+        <h3 class="text-sm font-semibold text-slate-900">Arraste imagens e vídeos para aqui</h3>
+        <p class="text-xs text-slate-500 mt-1">Os vídeos serão convertidos automaticamente para MP4</p>
+      </div>
+
+      <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm flex flex-col flex-grow">
+        <div class="flex justify-between items-center mb-4 border-b border-slate-100 pb-2">
+          <h2 class="text-base font-semibold text-slate-900">Fila de Espera</h2>
+          <button id="clearQueueBtn" class="text-xs text-red-500 hover:text-red-700 hidden font-medium">Limpar Fila</button>
+        </div>
+
+        <ul id="fileQueueList" class="flex-grow overflow-y-auto max-h-[250px] space-y-2 mb-4 text-sm pr-2">
+          <li class="text-slate-400 text-center py-8 text-xs" id="emptyQueueMsg">A aguardar ficheiros... Pode alterar as configurações à vontade.</li>
+        </ul>
+
+        <div class="mt-auto pt-4 border-t border-slate-100">
+          <div id="progressArea" class="hidden mb-4">
+            <div class="flex justify-between text-xs mb-1">
+              <span id="progressText" class="font-medium text-blue-600">A processar...</span>
+              <span id="progressCount">0/0</span>
+            </div>
+            <div class="w-full bg-slate-100 rounded-full h-2">
+              <div id="progressBar" class="bg-blue-600 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+            </div>
+          </div>
+          
+          <button id="startProcessBtn" disabled class="w-full bg-blue-600 disabled:bg-slate-300 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-xl shadow-sm transition">
+            Iniciar Processamento
+          </button>
+
+          <button id="downloadZipBtn" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-3 px-4 rounded-xl shadow-sm transition hidden mt-2">
+            📥 Descarregar Arquivo ZIP
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    const MAX_IMG_BYTES = 1.95 * 1024 * 1024; 
+    let fileQueue = [];
+    let generatedZipBlob = null;
+    let watermarkImgObj = null;
+    let totalBytesSaved = 0;
+    
+    const { createFFmpeg, fetchFile } = FFmpeg;
+    const ffmpeg = createFFmpeg({ log: true, corePath: 'https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js' });
+
+    const ui = {
+      fileInput: document.getElementById('fileInput'),
+      dropzone: document.getElementById('dropzone'),
+      formatSelect: document.getElementById('formatSelect'),
+      squareCrop: document.getElementById('squareCrop'),
+      muteVideo: document.getElementById('muteVideo'),
+      zipCheckbox: document.getElementById('zipCheckbox'),
+      watermarkInput: document.getElementById('watermarkInput'),
+      watermarkPreview: document.getElementById('watermarkPreview'),
+      wmImage: document.getElementById('wmImage'),
+      queueList: document.getElementById('fileQueueList'),
+      emptyMsg: document.getElementById('emptyQueueMsg'),
+      clearBtn: document.getElementById('clearQueueBtn'),
+      startBtn: document.getElementById('startProcessBtn'),
+      progArea: document.getElementById('progressArea'),
+      progBar: document.getElementById('progressBar'),
+      progCount: document.getElementById('progressCount'),
+      progText: document.getElementById('progressText'),
+      dlZipBtn: document.getElementById('downloadZipBtn'),
+      totalSavedStat: document.getElementById('totalSavedStat')
+    };
+
+    function loadSettings() {
+      if(localStorage.getItem('fmt')) ui.formatSelect.value = localStorage.getItem('fmt');
+      if(localStorage.getItem('sqr')) ui.squareCrop.checked = localStorage.getItem('sqr') === 'true';
+      if(localStorage.getItem('mute')) ui.muteVideo.checked = localStorage.getItem('mute') === 'true';
+      if(localStorage.getItem('zip')) ui.zipCheckbox.checked = localStorage.getItem('zip') === 'true';
+    }
+    
+    function saveSettings() {
+      localStorage.setItem('fmt', ui.formatSelect.value);
+      localStorage.setItem('sqr', ui.squareCrop.checked);
+      localStorage.setItem('mute', ui.muteVideo.checked);
+      localStorage.setItem('zip', ui.zipCheckbox.checked);
+    }
+
+    [ui.formatSelect, ui.squareCrop, ui.muteVideo, ui.zipCheckbox].forEach(el => el.addEventListener('change', saveSettings));
+    loadSettings(); 
+
+    ui.watermarkInput.addEventListener('change', (e) => {
+      if (e.target.files.length > 0) {
+        const file = e.target.files[0];
+        const url = URL.createObjectURL(file);
+        ui.wmImage.src = url;
+        ui.watermarkPreview.classList.remove('hidden');
+        watermarkImgObj = new Image();
+        watermarkImgObj.src = url;
+      } else {
+        ui.watermarkPreview.classList.add('hidden');
+        watermarkImgObj = null;
+      }
+    });
+
+    ui.dropzone.addEventListener('click', () => ui.fileInput.click());
+    ui.dropzone.addEventListener('dragover', (e) => { e.preventDefault(); ui.dropzone.classList.add('border-blue-500'); });
+    ui.dropzone.addEventListener('dragleave', () => ui.dropzone.classList.remove('border-blue-500'));
+    ui.dropzone.addEventListener('drop', (e) => {
+      e.preventDefault(); ui.dropzone.classList.remove('border-blue-500');
+      addFilesToQueue(e.dataTransfer.files);
+    });
+    ui.fileInput.addEventListener('change', (e) => addFilesToQueue(e.target.files));
+
+    function addFilesToQueue(files) {
+      for(let file of files) {
+        fileQueue.push({ file: file, status: 'pending', origSize: file.size, finalSize: 0 });
+      }
+      renderQueue();
+    }
+
+    ui.clearBtn.addEventListener('click', () => { fileQueue = []; renderQueue(); });
+
+    function renderQueue() {
+      ui.queueList.innerHTML = '';
+      if (fileQueue.length === 0) {
+        ui.queueList.appendChild(ui.emptyMsg);
+        ui.emptyMsg.style.display = 'block';
+        ui.clearBtn.classList.add('hidden');
+        ui.startBtn.disabled = true;
+        ui.dlZipBtn.classList.add('hidden');
+        return;
+      }
+      
+      ui.emptyMsg.style.display = 'none';
+      ui.clearBtn.classList.remove('hidden');
+      ui.startBtn.disabled = false;
+
+      fileQueue.forEach((item, index) => {
+        const li = document.createElement('li');
+        li.className = 'flex justify-between items-center bg-slate-50 p-2.5 rounded-lg border border-slate-100 shadow-sm';
+        
+        let statusHtml = '🕒';
+        let sizeInfo = `${(item.origSize / 1048576).toFixed(2)} MB`;
+        
+        if(item.status === 'done') {
+          statusHtml = '✅';
+          sizeInfo = `<span class="line-through text-slate-400 mr-1">${sizeMB(item.origSize)}</span> <span class="text-emerald-600 font-bold">${sizeMB(item.finalSize)}</span>`;
+        }
+        if(item.status === 'error') statusHtml = '❌';
+
+        li.innerHTML = `
+          <div class="flex items-center space-x-3 overflow-hidden">
+            <span class="text-lg">${statusHtml}</span>
+            <span class="truncate font-medium text-slate-700" title="${item.file.name}">${item.file.name}</span>
+          </div>
+          <div class="flex items-center space-x-3 ml-2 shrink-0 text-xs">
+            <span>${sizeInfo}</span>
+            ${item.status === 'pending' ? `<button onclick="removeFile(${index})" class="text-red-400 hover:text-red-600 font-bold p-1">✕</button>` : ''}
+          </div>
+        `;
+        ui.queueList.appendChild(li);
+      });
+    }
+
+    function sizeMB(bytes) { return (bytes / 1048576).toFixed(2) + ' MB'; }
+    window.removeFile = function(index) { fileQueue.splice(index, 1); renderQueue(); }
+
+    function updateTotalSaved() {
+      ui.totalSavedStat.textContent = (totalBytesSaved / 1048576).toFixed(2) + ' MB';
+    }
+
+    ui.startBtn.addEventListener('click', async () => {
+      if(fileQueue.length === 0) return;
+      
+      [ui.startBtn, ui.formatSelect, ui.squareCrop, ui.muteVideo, ui.zipCheckbox, ui.watermarkInput].forEach(el => el.disabled = true);
+      ui.clearBtn.classList.add('hidden');
+      ui.progArea.classList.remove('hidden');
+      ui.dlZipBtn.classList.add('hidden');
+      
+      // Lê as definições estritamente no momento do clique, permitindo reconfigurações prévias
+      const targetMime = ui.formatSelect.value;
+      const targetExt = ui.formatSelect.options[ui.formatSelect.selectedIndex].dataset.ext;
+      const applySquare = ui.squareCrop.checked;
+      const muteVideo = ui.muteVideo.checked;
+      const useZip = ui.zipCheckbox.checked;
+      const zip = useZip ? new JSZip() : null;
+
+      const hasVideos = fileQueue.some(item => item.file.type.startsWith('video/'));
+      if (hasVideos && !ffmpeg.isLoaded()) {
+        ui.progText.textContent = "A iniciar motor de vídeo (FFmpeg)...";
+        try { await ffmpeg.load(); } 
+        catch(e) { 
+          alert("O motor de vídeo encontrou um erro. Certifique-se de que o Service Worker está a correr corretamente."); 
+          resetUI(); return; 
+        }
+      }
+
+      for (let i = 0; i < fileQueue.length; i++) {
+        ui.progText.textContent = `A processar ficheiro ${i+1} de ${fileQueue.length}...`;
+        ui.progCount.textContent = `${i+1}/${fileQueue.length}`;
+        ui.progBar.style.width = `${((i+1)/fileQueue.length) * 100}%`;
+        
+        let item = fileQueue[i];
+        if (item.status === 'done') continue;
+
+        try {
+          let processedBlob;
+          let finalName = item.file.name.replace(/\.[^/.]+$/, "");
+
+          if (item.file.type.startsWith('video/')) {
+            processedBlob = await compressVideo(item.file, muteVideo);
+            finalName += "_30MB.mp4";
+          } else {
+            processedBlob = await compressImage(item.file, targetMime, applySquare);
+            finalName += `_2MB.${targetExt}`;
+          }
+
+          item.status = 'done';
+          item.finalSize = processedBlob.size;
+          
+          if(item.origSize > item.finalSize) {
+            totalBytesSaved += (item.origSize - item.finalSize);
+            updateTotalSaved();
+          }
+
+          if (useZip) {
+            zip.file(finalName, processedBlob);
+          } else {
+            downloadFile(processedBlob, finalName);
+            await new Promise(r => setTimeout(r, 400));
+          }
+        } catch (err) {
+          console.error(err);
+          item.status = 'error';
+        }
+        renderQueue();
+      }
+
+      ui.progText.textContent = "Processamento Concluído!";
+      resetUI();
+
+      if (useZip) {
+        ui.progText.textContent = "A gerar arquivo ZIP...";
+        generatedZipBlob = await zip.generateAsync({ type: "blob" });
+        ui.dlZipBtn.classList.remove('hidden');
+        ui.progText.textContent = "ZIP Pronto para download!";
+      }
+    });
+
+    function resetUI() {
+      [ui.formatSelect, ui.squareCrop, ui.muteVideo, ui.zipCheckbox, ui.watermarkInput, ui.startBtn].forEach(el => el.disabled = false);
+    }
+
+    function downloadFile(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    ui.dlZipBtn.addEventListener('click', () => {
+      if (generatedZipBlob) downloadFile(generatedZipBlob, 'catalogo_otimizado.zip');
+    });
+
+    async function compressVideo(file, mute) {
+      const inputName = 'in_' + file.name;
+      const outputName = 'out.mp4';
+      ffmpeg.FS('writeFile', inputName, await fetchFile(file));
+      
+      const args = ['-i', inputName, '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28', '-fs', '29000000'];
+      if (mute) args.push('-an'); 
+      args.push(outputName);
+      
+      await ffmpeg.run(...args);
+      const data = ffmpeg.FS('readFile', outputName);
+      
+      ffmpeg.FS('unlink', inputName);
+      ffmpeg.FS('unlink', outputName);
+      
+      return new Blob([data.buffer], { type: 'video/mp4' });
+    }
+
+    function compressImage(file, mimeType, applySquare) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        const objectUrl = URL.createObjectURL(file);
+        img.src = objectUrl;
+        img.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error('Falha na imagem')); };
+        
+        img.onload = async () => {
+          URL.revokeObjectURL(objectUrl);
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          
+          let { width, height } = img;
+          const maxDim = 2000;
+          
+          if (width > maxDim || height > maxDim) {
+            if (width > height) { height = Math.round((height * maxDim) / width); width = maxDim; }
+            else { width = Math.round((width * maxDim) / height); height = maxDim; }
+          }
+
+          let finalW = width;
+          let finalH = height;
+          let drawX = 0;
+          let drawY = 0;
+
+          if (applySquare) {
+            const side = Math.max(width, height);
+            finalW = side; finalH = side;
+            drawX = Math.round((side - width) / 2);
+            drawY = Math.round((side - height) / 2);
+          }
+
+          const render = (w, h, dx, dy, targetW, targetH) => {
+            canvas.width = targetW; 
+            canvas.height = targetH;
+            
+            ctx.fillStyle = "#FFFFFF"; 
+            ctx.fillRect(0, 0, targetW, targetH);
+            ctx.drawImage(img, dx, dy, w, h);
+
+            if (watermarkImgObj) {
+              const wmMaxWidth = targetW * 0.25; 
+              const ratio = watermarkImgObj.height / watermarkImgObj.width;
+              const wmW = Math.min(watermarkImgObj.width, wmMaxWidth);
+              const wmH = wmW * ratio;
+              const margin = targetW * 0.03; 
+              
+              ctx.globalAlpha = 0.6; 
+              ctx.drawImage(watermarkImgObj, targetW - wmW - margin, targetH - wmH - margin, wmW, wmH);
+              ctx.globalAlpha = 1.0;
+            }
+          };
+
+          render(width, height, drawX, drawY, finalW, finalH);
+
+          if (mimeType === 'image/png') {
+            let blob = await new Promise(r => canvas.toBlob(r, mimeType));
+            let scale = 0.9;
+            while (blob.size > MAX_IMG_BYTES && scale > 0.2) {
+              const newW = Math.round(width * scale);
+              const newH = Math.round(height * scale);
+              const newFinalW = Math.round(finalW * scale);
+              const newFinalH = Math.round(finalH * scale);
+              const newDx = Math.round(drawX * scale);
+              const newDy = Math.round(drawY * scale);
+              render(newW, newH, newDx, newDy, newFinalW, newFinalH);
+              blob = await new Promise(r => canvas.toBlob(r, mimeType));
+              scale -= 0.1;
+            }
+            resolve(blob);
+          } else {
+            let quality = 0.88;
+            let blob = await new Promise(r => canvas.toBlob(r, mimeType, quality));
+            while (blob.size > MAX_IMG_BYTES && quality > 0.3) {
+              quality -= 0.08;
+              blob = await new Promise(r => canvas.toBlob(r, mimeType, quality));
+            }
+            resolve(blob);
+          }
+        };
+      });
+    }
+  </script>
+</body>
+</html>
