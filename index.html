@@ -5,13 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Otimizador Pro | E-commerce</title>
   
-  <!-- Tailwind CSS (Sem crossorigin para carregar sempre) -->
+  <!-- Tailwind CSS (Sem crossorigin para evitar bloqueios) -->
   <script src="https://cdn.tailwindcss.com"></script>
   
   <!-- JSZip para agrupar ficheiros -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   
-  <!-- FFmpeg.wasm v0.12 (Nova API, sem precisar de coi-serviceworker.js) -->
+  <!-- FFmpeg.wasm v0.12 UMD -->
   <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.7/dist/umd/ffmpeg.js"></script>
   <script src="https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js"></script>
 </head>
@@ -81,7 +81,7 @@
     <div class="md:col-span-7 flex flex-col space-y-6">
       
       <div id="dropzone" class="border-2 border-dashed border-slate-300 bg-white rounded-2xl p-8 text-center cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition shadow-sm">
-        <input type="file" id="fileInput" multiple accept="image/*,video/*,.jfif" class="hidden">
+        <input type="file" id="fileInput" multiple accept="image/*,video/*,.jfif,.mov" class="hidden">
         <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-3 text-xl">📁</div>
         <h3 class="text-sm font-semibold text-slate-900">Arraste imagens e vídeos para aqui</h3>
         <p class="text-xs text-slate-500 mt-1">Os vídeos serão convertidos automaticamente para MP4</p>
@@ -128,9 +128,9 @@
     let watermarkImgObj = null;
     let totalBytesSaved = 0;
     
-    // Nova API do FFmpeg v0.12
+    // Configuração FFmpeg v0.12 UMD
     const { FFmpeg } = window.FFmpegWASM;
-    const { fetchFile, toBlobURL } = window.FFmpegUtil;  
+    const { fetchFile, toBlobURL } = window.FFmpegUtil;
     const ffmpeg = new FFmpeg();
     let ffmpegLoaded = false;
 
@@ -271,7 +271,7 @@
       const useZip = ui.zipCheckbox.checked;
       const zip = useZip ? new JSZip() : null;
 
-      const hasVideos = fileQueue.some(item => item.file.type.startsWith('video/'));
+      const hasVideos = fileQueue.some(item => item.file.type.startsWith('video/') || item.file.name.toLowerCase().endsWith('.mov'));
       if (hasVideos && !ffmpegLoaded) {
         ui.progText.textContent = "A descarregar motor de vídeo (aguarde)...";
         try { 
@@ -283,9 +283,9 @@
           });
           
           ffmpegLoaded = true;
-        }
+        } 
         catch(e) { 
-          alert("Erro ao iniciar o motor de vídeo."); 
+          alert("Erro ao iniciar o motor de vídeo. Verifique a consola."); 
           console.error(e);
           resetUI(); return; 
         }
@@ -303,7 +303,7 @@
           let processedBlob;
           let finalName = item.file.name.replace(/\.[^/.]+$/, "");
 
-          if (item.file.type.startsWith('video/')) {
+          if (item.file.type.startsWith('video/') || item.file.name.toLowerCase().endsWith('.mov')) {
             processedBlob = await compressVideo(item.file, muteVideo);
             finalName += "_30MB.mp4";
           } else {
@@ -359,9 +359,9 @@
       if (generatedZipBlob) downloadFile(generatedZipBlob, 'catalogo_otimizado.zip');
     });
 
-    // Função de compressão de vídeo atualizada para a API v0.12
+    // Compressão de Vídeo com FFmpeg v0.12 e bypass CORS via toBlobURL
     async function compressVideo(file, mute) {
-      const inputName = 'in_' + file.name;
+      const inputName = 'in_' + file.name.replace(/[^a-zA-Z0-9_.-]/g, '_');
       const outputName = 'out.mp4';
       
       await ffmpeg.writeFile(inputName, await fetchFile(file));
@@ -379,7 +379,7 @@
       return new Blob([data.buffer], { type: 'video/mp4' });
     }
 
-    // Função de compressão de imagem otimizada com pesquisa binária
+    // Compressão de Imagem Otimizada (Pesquisa Binária + Yield para não congelar)
     async function compressImage(file, mimeType, applySquare) {
       return new Promise((resolve, reject) => {
         const img = new Image();
@@ -448,7 +448,7 @@
             let iters = 0;
 
             while (min <= max && iters < maxIters) {
-              await new Promise(r => setTimeout(r, 0)); // Evita block UI
+              await new Promise(r => setTimeout(r, 0)); // Yield para manter a interface fluida
               
               iters++;
               let mid = (min + max) / 2;
@@ -497,3 +497,4 @@
     }
   </script>
 </body>
+</html>
