@@ -130,7 +130,7 @@
     
     // Nova API do FFmpeg v0.12
     const { FFmpeg } = window.FFmpegWASM;
-    const { fetchFile } = window.FFmpegUtil;
+    const { fetchFile, toBlobURL } = window.FFmpegUtil;  
     const ffmpeg = new FFmpeg();
     let ffmpegLoaded = false;
 
@@ -275,13 +275,15 @@
       if (hasVideos && !ffmpegLoaded) {
         ui.progText.textContent = "A descarregar motor de vídeo (aguarde)...";
         try { 
-          // Carrega as versões single-thread diretamente da CDN
+          const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
+          
           await ffmpeg.load({
-            coreURL: 'https://unpkg.com/@ffmpeg/core@0.12.4/dist/umd/ffmpeg-core.js',
-            wasmURL: 'https://unpkg.com/@ffmpeg/core@0.12.4/dist/umd/ffmpeg-core.wasm'
+            coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+            wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
           });
+          
           ffmpegLoaded = true;
-        } 
+        }
         catch(e) { 
           alert("Erro ao iniciar o motor de vídeo."); 
           console.error(e);
